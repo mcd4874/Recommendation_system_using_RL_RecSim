@@ -203,8 +203,8 @@ class UserModel(user.AbstractUserModel):
         scores = self.choice_model.scores
         selected_index = self.choice_model.choose_item()
         # Populate clicked item.
-        print("the select corpus index is :",selected_index)
-        print("length of slate doc :",len(slate_documents))
+        # print("the select corpus index is :",selected_index)
+        # print("length of slate doc :",len(slate_documents))
         self.generate_response(slate_documents[selected_index],
                                 responses[selected_index])
         return responses
@@ -239,11 +239,16 @@ class UserModel(user.AbstractUserModel):
 
 
 def clicked_engagement_reward(responses):
-  reward = 0.0
-  for response in responses:
-    if response.clicked:
-      reward += response.engagement
-  return reward
+    """
+    this function will calculate the reward
+    :param responses:
+    :return:
+    """
+    reward = 0.0
+    for response in responses:
+        if response.clicked:
+          reward += response.engagement
+    return reward
 
 
 
@@ -254,7 +259,7 @@ def test_doc_model():
     for i in range(5):
         doc = sampler.sample_document()
         # print(doc.doc_id())
-        print(doc.create_observation().shape)
+        # print(doc.create_observation().shape)
     # d = sampler.sample_document()
     # print("Documents have observation space:", d.observation_space(), "\n"
     #                                                                   "An example realization is: ",
@@ -281,7 +286,11 @@ def test_env():
     path = '../master_capston/the-movies-dataset/'
     features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
     sampler = LTSDocumentSampler(dataset=features_embedding_movies)
+
+    # this mean the number of items in the recommendation return from the agent
     slate_size = 3
+
+    # i am assuming this number mean the # of possible items to send to the agent for recommend for each slate
     num_candidates = 10
 
     format_data = data_preprocess.load_data(path)
@@ -305,7 +314,7 @@ def test_env():
     lts_gym_env = recsim_gym.RecSimGymEnv(ltsenv, clicked_engagement_reward)
 
     observation_0 = lts_gym_env.reset()
-    print(observation_0['user'][:5])
+    # print(observation_0['user'][:5])
     # print('Observation 0')
     # print('Available documents')
     # doc_strings = ['doc_id ' + key + " kaleness " + str(value) for key, value
@@ -319,7 +328,10 @@ def test_env():
     # print('Noisy user state observation')
     # print(observation_0['user'])
 
+    print(lts_gym_env.observation_space)
+    print(lts_gym_env.action_space)
+
 # test_doc_model()
 
 # test_user_model()
-test_env()
+# test_env()
