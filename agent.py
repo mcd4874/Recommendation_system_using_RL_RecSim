@@ -28,7 +28,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
     def __init__(self, sess,
                observation_space,
-               action_space,actor_model, critic_model,buffer,noise_model,
+               action_space,actor_model, critic_model,buffer,noise_model,slate_size,embedding_size,
                optimizer_name='',
                eval_mode=False,
                **kwargs):
@@ -43,6 +43,8 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         self.buffer = buffer
         self.noise_model = noise_model
         self.sess = sess
+        self.slate_size = slate_size
+        self.embedding_size = embedding_size
         # self.buffer_size = 300
         print('observe space ',observation_space)
         print('action space ',action_space)
@@ -59,7 +61,8 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         user_state = user.reshape(1,user.shape[0]*user.shape[1])
         return user_state
 
-
+    def calculate_bellman(self,rewards,q_values,dones):
+        return
     def step(self, reward, observation):
         print("stat to step ")
 
@@ -75,32 +78,45 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         # print(doc[0])
 
         actions = self.actor_model.predict(state)
+        actions = actions.reshape(self.slate_size,self.embedding_size)
+        print("actions shape : ",actions.shape)
         result_recommend_list = self.generate_actions(items_space,actions)
-        return item_keys[result_recommend_list]
+        print("recommend index items slate : ",result_recommend_list)
+        return result_recommend_list
+        # return item_keys[result_recommend_list]
 
     def update_network_from_batches(self,batch_size):
         if self.buffer.size() < batch_size:
-            pass
+            return 0.0,0.0
         samples = self.buffer.sample_batch(batch_size)
+        print("sample size : ",len(samples))
+        # print("sample element size : ",samples[0][0])
         state_batch = np.asarray([_[0] for _ in samples])
-        action_batch = np.asarray([_[1] for _ in samples])
+        action_batch = np.asarray([_[1]for _ in samples])
         reward_batch = np.asarray([_[2] for _ in samples])
         n_state_batch = np.asarray([_[3] for _ in samples])
 
         # calculate predicted q value
         action_weights = self.actor_model.predict_target(state_batch)
         # n_action_batch = gene_actions(item_space, action_weights, action_len)
+        print("action weight shape : ",action_weights.shape)
+        print("next state batches shape : ",n_state_batch.shape)
         target_q_batch = self.critic_model.predict_target(n_state_batch, action_weights)
         y_batch = []
         for i in range(batch_size):
             y_batch.append(reward_batch[i] + self.critic_model.gamma * target_q_batch[i])
 
         # train critic
-        q_value, critic_loss, _ = self.critic_model.train(state_batch, action_batch, np.reshape(y_batch, (batch_size, 1)))
+
+        target_critic_values = np.reshape(y_batch, (batch_size, 1))
+        print("target critic shape :",target_critic_values.shape)
+        critic_loss = self.critic_model.train(state_batch, action_batch, np.reshape(y_batch, (batch_size, 1)))
+        q_value = self.critic_model.predict(state_batch, action_batch)
         # train actor
         action_weight_batch_for_gradients = self.actor_model.predict(state_batch)
         # action_batch_for_gradients = gene_actions(item_space, action_weight_batch_for_gradients, action_len)
-        a_gradient_batch = self.critic_model.action_gradients(state_batch,action_weight_batch_for_gradients)
+        a_gradient_batch = self.critic_model.gradients(state_batch,action_weight_batch_for_gradients)
+        print("a gradient batch : ",a_gradient_batch[0])
         self.actor_model.train(state_batch, a_gradient_batch[0])
 
         # update target networks
@@ -126,10 +142,12 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
             state = self.generate_state_represetation(user)
             for step in range(episode_length):
                 actions = self.actor_model.predict(state)+self.noise_model.noise()
-                result_recommend_list = self.generate_actions(items_space, actions)
-                reward, next_observation = env.step(result_recommend_list)
+
+                transform_action = actions.reshape(self.slate_size,self.embedding_size)
+                result_recommend_list = self.generate_actions(items_space, transform_action)
+                next_observation, reward, done, _ = env.step(result_recommend_list)
                 next_state = self.generate_state_represetation(next_observation['user'])
-                self.buffer.add(state,actions,reward,next_state)
+                self.buffer.add(state.flatten(),actions.flatten(),reward,next_state.flatten())
                 ep_reward += reward
 
                 ep_q_value_, critic_loss = self.update_network_from_batches(batch_size)
@@ -266,7 +284,7 @@ def test_agent():
         critic = Critic(sess,s_dim,a_dim,slate_size,embedding_size,gamma,tau,lr)
         buffer = RelayBuffer(buffer_size)
         noise_model = Noise(a_dim)
-        agent = Actor_Critic_Agent(sess,lts_gym_env.observation_space,lts_gym_env.action_space,actor,critic,buffer,noise_model)
+        agent = Actor_Critic_Agent(sess,lts_gym_env.observation_space,lts_gym_env.action_space,actor,critic,buffer,noise_model,slate_size,embedding_size)
         observation_0 = lts_gym_env.reset()
         print(observation_0['user'][:5])
         # print('Observation 0')
@@ -275,8 +293,36 @@ def test_agent():
         #                in observation_0['doc'].items()]
         # print('\n'.join(doc_strings))
         # slates = agent.step(0,observation_0)
-        recommendation_slate_0 = [0, 1, 2]
+        # recommendation_slate_0 = [0, 1, 2]
         recommend_slate = agent.step(0,observation_0)
-        observation_1, reward, done, _ = lts_gym_env.step(recommendation_slate_0)
+        print("recommend actual docs items : ",recommend_slate)
+        observation_1, reward, done, _ = lts_gym_env.step(recommend_slate)
+        print("reward : ",reward)
+        print("is done ? ",done)
+        recommend_slate = agent.step(0, observation_1)
 
-test_agent()
+def test_agent_train():
+    with tf.Session() as sess:
+        embedding_size = 30
+        num_positive_hisotry_items = 10
+        s_dim = num_positive_hisotry_items * embedding_size
+        a_dim = slate_size * embedding_size
+        lr = 0.001
+        tau = 0.2
+        batch_size = 4
+        gamma = 0.125
+        buffer_size = 1000
+        actor = Actor(sess, s_dim, a_dim, batch_size, slate_size, embedding_size, tau, lr)
+        critic = Critic(sess, s_dim, a_dim, slate_size, embedding_size, gamma, tau, lr)
+        buffer = RelayBuffer(buffer_size)
+        noise_model = Noise(a_dim)
+        agent = Actor_Critic_Agent(sess, lts_gym_env.observation_space, lts_gym_env.action_space, actor, critic, buffer,
+                                   noise_model, slate_size, embedding_size)
+        max_eps = 10
+        eps_len = 4
+
+        agent.train(max_eps,eps_len,batch_size,lts_gym_env)
+
+# test_agent()
+
+test_agent_train()
