@@ -9,7 +9,8 @@ import pprint as pp
 from collections import deque
 import random
 from tensorflow import keras as keras
-from tensorflow.keras import backend as K
+# from tensorflow.keras import backend as K
+import keras.backend as K
 class Actor(object):
     """policy function approximator"""
 
@@ -58,7 +59,13 @@ class Actor(object):
         action_gdts = K.placeholder(shape=(None, self.a_dim))
         params_grad = tf.gradients(self.actor_model.output, self.actor_model.trainable_weights, -action_gdts)
         grads = zip(params_grad, self.actor_model.trainable_weights)
-        return K.function([self.actor_model.input, action_gdts], [tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)])
+        return K.function(inputs=[self.actor_model.input, action_gdts], outputs=[],updates=[tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)])
+
+        # print("trainable weights shape : ",len(self.actor_model.trainable_weights))
+        # print("action gdts shape : ",action_gdts.shape)
+        # print("actor model input shape : ",self.actor_model.input.shape)
+        # return K.function([self.actor_model.input, action_gdts], [tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)])
+
 
         # self.actor_critic_grad = tf.placeholder(tf.float32,
         #                                         [None, self.a_dim])  # where we will feed de/dC (from critic)
@@ -74,13 +81,17 @@ class Actor(object):
     def train(self, states,grads):
         """ Actor Training
                 """
-        # self.optimizer([states, grads])
+        # print("a gradient batch : ",np.array(grads).reshape((-1, self.a_dim)))
+        grads = np.array(grads).reshape((-1, self.a_dim))
+        # print("state train shapes : ",states.shape)
+        # print("shape of grad : ",grads.shape)
+        self.optimizer([states, grads])
 
 
-        self.sess.run(self.optimizer, feed_dict={
-            self.actor_state_input: states,
-            self.actor_critic_grad: grads
-        })
+        # self.sess.run(self.optimizer, feed_dict={
+        #     self.actor_state_input: states,
+        #     self.actor_critic_grad: grads
+        # })
 
     def predict(self, state):
         return self.actor_model.predict(state)

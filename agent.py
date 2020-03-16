@@ -89,7 +89,7 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         if self.buffer.size() < batch_size:
             return 0.0,0.0
         samples = self.buffer.sample_batch(batch_size)
-        print("sample size : ",len(samples))
+        # print("sample size : ",len(samples))
         # print("sample element size : ",samples[0][0])
         state_batch = np.asarray([_[0] for _ in samples])
         action_batch = np.asarray([_[1]for _ in samples])
@@ -99,8 +99,8 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         # calculate predicted q value
         action_weights = self.actor_model.predict_target(state_batch)
         # n_action_batch = gene_actions(item_space, action_weights, action_len)
-        print("action weight shape : ",action_weights.shape)
-        print("next state batches shape : ",n_state_batch.shape)
+        # print("action weight shape : ",action_weights.shape)
+        # print("next state batches shape : ",n_state_batch.shape)
         target_q_batch = self.critic_model.predict_target(n_state_batch, action_weights)
         y_batch = []
         for i in range(batch_size):
@@ -109,15 +109,17 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         # train critic
 
         target_critic_values = np.reshape(y_batch, (batch_size, 1))
-        print("target critic shape :",target_critic_values.shape)
+        # print("target critic shape :",target_critic_values.shape)
         critic_loss = self.critic_model.train(state_batch, action_batch, np.reshape(y_batch, (batch_size, 1)))
         q_value = self.critic_model.predict(state_batch, action_batch)
         # train actor
         action_weight_batch_for_gradients = self.actor_model.predict(state_batch)
         # action_batch_for_gradients = gene_actions(item_space, action_weight_batch_for_gradients, action_len)
         a_gradient_batch = self.critic_model.gradients(state_batch,action_weight_batch_for_gradients)
-        print("a gradient batch : ",a_gradient_batch[0])
-        self.actor_model.train(state_batch, a_gradient_batch[0])
+        # print("a gradient batch : ",np.array(a_gradient_batch).reshape((-1, self.act_dim)))
+        # self.actor_model.train(state_batch, a_gradient_batch[0])
+        self.actor_model.train(state_batch, a_gradient_batch)
+
 
         # update target networks
         self.actor_model.update_target_network()
@@ -303,6 +305,7 @@ def test_agent():
 
 def test_agent_train():
     with tf.Session() as sess:
+    # sess = None
         embedding_size = 30
         num_positive_hisotry_items = 10
         s_dim = num_positive_hisotry_items * embedding_size
