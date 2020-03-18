@@ -48,7 +48,7 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
         # self.buffer_size = 300
         print('observe space ',observation_space)
         print('action space ',action_space)
-
+        self.list_item_alreay_recommend = []
 
     def generate_doc_representation(self,doc):
         origin_corpus = list(doc.values())
@@ -63,13 +63,27 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
 
     def calculate_bellman(self,rewards,q_values,dones):
         return
+
+    # def update_item_space(self,):
+
     def step(self, reward, observation):
+        """
+
+        :param reward:
+        :param observation:
+        :return:
+        """
         print("stat to step ")
 
         doc = observation['doc']
         user = observation['user']
+        user_id = user['user_id']
+        user_past_record_ids = user['record_ids']
+        user_past_record = user['past_record']
+        #
         items_space,item_keys = self.generate_doc_representation(doc)
-        state = self.generate_state_represetation(user)
+        #
+        state = self.generate_state_represetation(user_past_record)
         print('user infor: ',state.shape)
         print('items space info :',items_space.shape)
         print('items keys info :',item_keys.shape)
@@ -127,7 +141,7 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
 
         return np.amax(q_value), critic_loss
 
-    def train(self,max_episode,episode_length,batch_size,env):
+    def train(self,max_episode,batch_size,env):
         # initialize target network weights
         self.actor_model.hard_update_target_network()
         self.critic_model.hard_update_target_network()
@@ -138,17 +152,26 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
             loss = 0.
             # item_space = recall_data
             observation = env.reset()
+            terminal = False
+
             doc = observation['doc']
             user = observation['user']
+            user_id = user['user_id']
+            user_past_record_ids = user['record_ids']
+            user_past_record = user['past_record']
             items_space, item_keys = self.generate_doc_representation(doc)
-            state = self.generate_state_represetation(user)
-            for step in range(episode_length):
+            state = self.generate_state_represetation(user_past_record)
+
+            while(not terminal):
+                print("terminal at beginning : ",terminal)
+
+            # for step in range(episode_length):
                 actions = self.actor_model.predict(state)+self.noise_model.noise()
 
                 transform_action = actions.reshape(self.slate_size,self.embedding_size)
                 result_recommend_list = self.generate_actions(items_space, transform_action)
-                next_observation, reward, done, _ = env.step(result_recommend_list)
-                next_state = self.generate_state_represetation(next_observation['user'])
+                next_observation, reward, terminal, _ = env.step(result_recommend_list)
+                next_state = self.generate_state_represetation(next_observation['user']['past_record'])
                 self.buffer.add(state.flatten(),actions.flatten(),reward,next_state.flatten())
                 ep_reward += reward
 
@@ -305,7 +328,6 @@ def test_agent():
 
 def test_agent_train():
     with tf.Session() as sess:
-    # sess = None
         embedding_size = 30
         num_positive_hisotry_items = 10
         s_dim = num_positive_hisotry_items * embedding_size
@@ -321,11 +343,10 @@ def test_agent_train():
         noise_model = Noise(a_dim)
         agent = Actor_Critic_Agent(sess, lts_gym_env.observation_space, lts_gym_env.action_space, actor, critic, buffer,
                                    noise_model, slate_size, embedding_size)
-        max_eps = 10
-        eps_len = 4
+        max_eps = 2
 
-        agent.train(max_eps,eps_len,batch_size,lts_gym_env)
+        agent.train(max_eps,batch_size,lts_gym_env)
 
 # test_agent()
 
-test_agent_train()
+# test_agent_train()
