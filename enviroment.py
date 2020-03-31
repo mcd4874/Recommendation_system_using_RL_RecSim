@@ -180,7 +180,7 @@ class LTSDocumentSampler(document.AbstractDocumentSampler):
         self.dataset = dataset
 
 class LTSUserState(user.AbstractUserState):
-    def __init__(self, memory_discount,time_budget,user_info,corpus_features_dim = 30,history_record_size = 10):
+    def __init__(self, memory_discount,time_budget,user_info,offline_mode = True ,corpus_features_dim = 30,history_record_size = 10):
         ## Transition model parameters
         ##############################
         # self.memory_discount = memory_discount
@@ -235,7 +235,7 @@ class LTSUserState(user.AbstractUserState):
 
 
 class LTSStaticUserSampler(user.AbstractUserSampler):
-    def __init__(self, posible_user_ids,user_data,corpus_data,memory_discount=0.9,
+    def __init__(self, user_recent_history_data,corpus_data,offline_data = None,offline_mode = True,memory_discount=0.9,
                time_budget=4,history_size = 10,doc_feature_size = 30,
                user_ctor=LTSUserState,seed = 0,
                **kwargs):
@@ -244,28 +244,32 @@ class LTSStaticUserSampler(user.AbstractUserSampler):
                                   'time_budget': time_budget
                                  }
         self.corpus_data = corpus_data
-        self.user_data = user_data
-        self.posible_user_ids = posible_user_ids
+        self.user_recent_history_data = user_recent_history_data
+        self.posible_user_ids = np.unique(self.user_recent_history_data['userId'].values())
         self.seed = seed
         self.doc_feature_size = doc_feature_size
         self.history_size = history_size
+
+        self.offline_mode = offline_mode
+        self.offline_data = offline_data
 
     def sample_user(self):
 
 
         # pick one user out of list of possible user to perform the study
         pick_user_id = np.random.choice(self.posible_user_ids, 1)[0]
-        history_data = self.user_data[self.user_data['userId'] == pick_user_id].sort_values(by=['timestamp'])
-        while(history_data.shape[0] < self.history_size ):
-            print('need to resample')
-            pick_user_id = np.random.choice(self.posible_user_ids, 1)[0]
-            print('user id resample',pick_user_id)
-            history_data = self.user_data[self.user_data['userId'] == pick_user_id].sort_values(by=['timestamp'])
+        history_data = self.user_recent_history_data[self.user_recent_history_data['userId'] == pick_user_id].sort_values(by=['timestamp'])
+        # history_data = self.user_data[self.user_data['userId'] == pick_user_id].sort_values(by=['timestamp'])
+        # while(self.user_recent_history_data.shape[0] < self.history_size ):
+        #     print('need to resample')
+        #     pick_user_id = np.random.choice(self.posible_user_ids, 1)[0]
+        #     print('user id resample',pick_user_id)
+        #     history_data = self.user_data[self.user_data['userId'] == pick_user_id].sort_values(by=['timestamp'])
 
 
         # create a matrix for user history doc features
         past_record = np.zeros((self.history_size,self.doc_feature_size))
-        past_record_ids = history_data['movieId'].values[:self.history_size]
+        past_record_ids = history_data['movieId'].values
         for index in range(self.history_size):
             current_move_id = past_record_ids[index]
             current_movie_embedding_features = self.corpus_data[self.corpus_data['id'] == current_move_id]
@@ -306,10 +310,35 @@ class LTSResponse(user.AbstractResponse):
                     dtype=np.float32)
         })
 
+class HistoryChoiceModel(NormalizableChoiceModel):
+  """A multinomial logit choice model.
+
+   Samples item x in scores according to
+     p(x) = exp(x) / Sum_{y in scores} exp(y)
+
+   Args:
+     choice_features: a dict that stores the features used in choice model:
+       `no_click_mass`: a float indicating the mass given to a no click option.
+  """
+
+  def __init__(self, choice_features):
+    self._no_click_mass = choice_features.get('no_click_mass', -float('Inf'))
+
+  def score_documents(self, user_state, doc_obs):
+    logits = self._score_documents_helper(user_state, doc_obs)
+    logits = np.append(logits, self._no_click_mass)
+    # Use softmax scores instead of exponential scores to avoid overflow.
+    all_scores = softmax(logits)
+    self._scores = all_scores[:-1]
+    self._score_no_click = all_scores[-1]
+
 class UserModel(user.AbstractUserModel):
-    def __init__(self, sampler, slate_size = 10,response_ctor = LTSResponse):
+    def __init__(self, sampler, offline_mode = True ,slate_size = 10,response_ctor = LTSResponse):
         super(UserModel, self).__init__(response_ctor,sampler,slate_size)
+        self.offline_mode = offline_mode
+        if (self.offline_mode):
         self.choice_model = MultinomialLogitChoiceModel({})
+
 
     def simulate_response(self, slate_documents):
         # List of empty responses
@@ -359,10 +388,11 @@ def clicked_engagement_reward(responses):
     :return:
     """
     reward = 0.0
+    total = len(responses)
     for response in responses:
         if response.clicked:
-          reward += response.engagement
-    return reward
+            reward += 1.0
+    return reward/total
 
 def select_dataset(dataset,user_data):
     def user_history_documents(user_id):

@@ -29,7 +29,9 @@ def test_env_agent_offline():
     path = '../master_capston/the-movies-dataset/'
     features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
     with tf.Session() as sess:
-
+        train_mode = True
+        test_mode = False
+        offline_mode = True
         sampler = LTSDocumentSampler(dataset=features_embedding_movies)
 
         # this mean the number of items in the recommendation return from the agent
@@ -40,12 +42,25 @@ def test_env_agent_offline():
 
         format_data = data_preprocess.load_data(path)
         features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
+        # print(features_embedding_movies.head())
+        # print(format_data.describe())
+        # print(format_data[format_data['rating']<4].describe())
+        # print(format_data[format_data['rating'] > 3].describe())
         positive_user_ids, positive_history_data = data_preprocess.get_user_positive(format_data)
-        user_sampler = LTSStaticUserSampler(positive_user_ids, positive_history_data, features_embedding_movies)
-        func = select_dataset(features_embedding_movies, positive_history_data)
+        # print(len(positive_history_data))
+        # print(len(positive_history_data[positive_history_data['rating']>3]))
+        #generate train and test set
+        train_set,test_set = data_preprocess.generate_train_test_data(positive_history_data)
+        users_history_data,train_set = data_preprocess.create_recent_history(train_set,embedding_features_data=features_embedding_movies)
+        print(len(train_set))
+        print(len(users_history_data))
+        # data_preprocess.generate_csv_file(train_set,'train_set.csv')
+        # data_preprocess.generate_csv_file(test_set,'test_set.csv')
 
 
-        LTSUserModel = UserModel(user_sampler, slate_size, LTSResponse)
+        user_sampler = LTSStaticUserSampler(users_history_data, features_embedding_movies)
+        func = select_dataset(features_embedding_movies, test_set)
+        LTSUserModel = UserModel(user_sampler,offline_mode, slate_size, LTSResponse)
         ltsenv = CustomSingleUserEnviroment(
             LTSUserModel,
             sampler,
@@ -53,10 +68,6 @@ def test_env_agent_offline():
             slate_size,
             resample_documents=False, offline_mode=True, select_subset_func=func)
         lts_gym_env = recsim_gym.RecSimGymEnv(ltsenv, clicked_engagement_reward)
-
-
-
-
         # simulated environment
         embedding_size = 30
         num_positive_hisotry_items = 10

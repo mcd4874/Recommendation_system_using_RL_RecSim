@@ -217,36 +217,6 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
     # def end_episode(self):
     #     hh
     #
-    # def learn_from_batch(self,replay_buffer, batch_size,item_space, action_len, s_dim, a_dim):
-    #     if replay_buffer.size() < batch_size:
-    #         pass
-    #     samples = replay_buffer.sample_batch(batch_size)
-    #     state_batch = np.asarray([_[0] for _ in samples])
-    #     action_batch = np.asarray([_[1] for _ in samples])
-    #     reward_batch = np.asarray([_[2] for _ in samples])
-    #     n_state_batch = np.asarray([_[3] for _ in samples])
-    #
-    #     # calculate predicted q value
-    #     action_weights = self.actor.predict_target(state_batch)
-    #     n_action_batch = gene_actions(item_space, action_weights, action_len)
-    #     target_q_batch = self.critic.predict_target(n_state_batch.reshape((-1, s_dim)), n_action_batch.reshape((-1, a_dim)))
-    #     y_batch = []
-    #     for i in range(batch_size):
-    #         y_batch.append(reward_batch[i] + self.critic.gamma * target_q_batch[i])
-    #
-    #     # train critic
-    #     q_value, critic_loss, _ = self.critic.train(state_batch, action_batch, np.reshape(y_batch, (batch_size, 1)))
-    #     # train actor
-    #     action_weight_batch_for_gradients = self.actor.predict(state_batch)
-    #     action_batch_for_gradients = gene_actions(item_space, action_weight_batch_for_gradients, action_len)
-    #     a_gradient_batch = self.critic.action_gradients(state_batch, action_batch_for_gradients.reshape((-1, a_dim)))
-    #     self.actor.train(state_batch, a_gradient_batch[0])
-    #
-    #     # update target networks
-    #     self.actor.update_target_network()
-    #     self.critic.update_target_network()
-    #
-    #     return np.amax(q_value), critic_loss
 
 
 
@@ -255,43 +225,36 @@ class Actor_Critic_Agent(AbstractEpisodicRecommenderAgent):
 
 
 
-path = '../master_capston/the-movies-dataset/'
-features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
-sampler = LTSDocumentSampler(dataset=features_embedding_movies)
-slate_size = 3
-num_candidates = 15
 
-format_data = data_preprocess.load_data(path)
-# print(format_data.head())
-# print(format_data.shape)
-
-features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
-positive_user_ids, positive_history_data = data_preprocess.get_user_positive(format_data)
-user_sampler = LTSStaticUserSampler(positive_user_ids, positive_history_data, features_embedding_movies)
-LTSUserModel = UserModel(user_sampler, slate_size, LTSResponse)
-ltsenv = environment.Environment(
-        LTSUserModel,
-        sampler,
-        num_candidates,
-        slate_size,
-        resample_documents=True)
-lts_gym_env = recsim_gym.RecSimGymEnv(ltsenv, clicked_engagement_reward)
-
+# path = '../master_capston/the-movies-dataset/'
+# features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
+# sampler = LTSDocumentSampler(dataset=features_embedding_movies)
+# slate_size = 3
+# num_candidates = 15
+#
+# format_data = data_preprocess.load_data(path)
+# # print(format_data.head())
+# # print(format_data.shape)
+#
+# features_embedding_movies = pd.read_csv(os.path.join(path, 'movie_embedding_features.csv'))
+# positive_user_ids, positive_history_data = data_preprocess.get_user_positive(format_data)
+# user_sampler = LTSStaticUserSampler(positive_user_ids, positive_history_data, features_embedding_movies)
+# LTSUserModel = UserModel(user_sampler, slate_size, LTSResponse)
+# ltsenv = environment.Environment(
+#         LTSUserModel,
+#         sampler,
+#         num_candidates,
+#         slate_size,
+#         resample_documents=True)
+# lts_gym_env = recsim_gym.RecSimGymEnv(ltsenv, clicked_engagement_reward)
+tmp_base_dir = 'detmp/recsim/'
 
 def create_agent(sess, environment, eval_mode, summary_writer=None):
   return Actor_Critic_Agent(environment.observation_space, environment.action_space)
 
-tmp_base_dir = 'detmp/recsim/'
 
-# runner = runner_lib.EvalRunner(
-#   base_dir=tmp_base_dir,
-#   create_agent_fn=create_agent,
-#   env=lts_gym_env,
-#   max_eval_episodes=1,
-#   max_steps_per_episode=3,
-#   test_mode=True)
-#
-# runner.run_experiment()
+
+
 
 def test_agent():
     with tf.Session() as sess:
