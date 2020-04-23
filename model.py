@@ -9,12 +9,15 @@ import pprint as pp
 from collections import deque
 import random
 from tensorflow import keras as keras
+from tensorflow.initializers import random_uniform
 # from tensorflow.keras import backend as K
 import keras.backend as K
+# hidden_1 = 400
+# hidden_2 = 300
 class Actor(object):
     """policy function approximator"""
 
-    def __init__(self, sess, s_dim, a_dim, batch_size, output_size, weights_len, tau, learning_rate):
+    def __init__(self, sess, s_dim, a_dim, batch_size, output_size, weights_len, tau, learning_rate,hidden_layer_1 = 256,hidden_layer_2 = 128):
         """
 
         :param sess:
@@ -30,14 +33,16 @@ class Actor(object):
         self.sess = sess
         self.s_dim = s_dim
         self.a_dim = a_dim
+        self.hidden_layer_1 = hidden_layer_1
+        self.hidden_layer_2 = hidden_layer_2
         self.batch_size = batch_size
         self.output_size = output_size
         self.weights_len = weights_len
         self.tau = tau
         self.learning_rate = learning_rate
 
-        self.actor_state_input,self.actor_model = self.create_actor_model()
-        _,self.target_actor_model = self.create_actor_model()
+        self.actor_model = self.create_actor_model()
+        self.target_actor_model = self.create_actor_model()
 
 
         self.optimizer = self.create_optimizer()
@@ -46,13 +51,33 @@ class Actor(object):
 
     def create_actor_model(self):
         state = keras.Input(shape=(self.s_dim,))
-        h1 = keras.layers.Dense(16, activation='relu')(state)
-        h2 = keras.layers.Dense(32, activation='relu')(h1)
+        h1 = keras.layers.Dense(self.hidden_layer_1, activation='relu')(state)
+        h2 = keras.layers.Dense(self.hidden_layer_2, activation='relu')(h1)
         output = keras.layers.Dense(self.a_dim,
                        activation='tanh')(h2)
 
         model = keras.Model(state,output)
-        return state,model
+        model.summary()
+        return model
+
+    # def create_actor_model(self):
+    #     state = keras.Input(shape=(self.s_dim,))
+    #     f1 = 1. / np.sqrt(hidden_1)
+    #     h1 = keras.layers.Dense(hidden_1, activation='relu',kernel_initializer=random_uniform(-f1, f1),
+    #                                  bias_initializer=random_uniform(-f1, f1))(state)
+    #     h1 = keras.layers.BatchNormalization()(h1)
+    #     f2 = 1. / np.sqrt(hidden_2)
+    #     h2 = keras.layers.Dense(hidden_2, activation='relu',kernel_initializer=random_uniform(-f2, f2),
+    #                                  bias_initializer=random_uniform(-f2, f2))(h1)
+    #     h2 = keras.layers.BatchNormalization()(h2)
+    #     f3 = 0.003
+    #     output = keras.layers.Dense(self.a_dim,
+    #                    activation='tanh',kernel_initializer= random_uniform(-f3, f3),
+    #                         bias_initializer=random_uniform(-f3, f3))(h2)
+    #
+    #     model = keras.Model(state,output)
+    #     model.summary()
+    #     return state,model
     def create_optimizer(self):
         """ Actor Optimizer
         """
@@ -60,23 +85,9 @@ class Actor(object):
         params_grad = tf.gradients(self.actor_model.output, self.actor_model.trainable_weights, -action_gdts)
         grads = zip(params_grad, self.actor_model.trainable_weights)
         return K.function(inputs=[self.actor_model.input, action_gdts], outputs=[],updates=[tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)])
-
-        # print("trainable weights shape : ",len(self.actor_model.trainable_weights))
-        # print("action gdts shape : ",action_gdts.shape)
-        # print("actor model input shape : ",self.actor_model.input.shape)
         # return K.function([self.actor_model.input, action_gdts], [tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)])
 
 
-        # self.actor_critic_grad = tf.placeholder(tf.float32,
-        #                                         [None, self.a_dim])  # where we will feed de/dC (from critic)
-        #
-        # actor_model_weights = self.actor_model.trainable_weights
-        #
-        # print("actor model weights : ",actor_model_weights)
-        # self.actor_grads = tf.gradients(self.actor_model.output,
-        #                                 actor_model_weights, -self.actor_critic_grad)  # dC/dA (from actor)
-        # grads = zip(self.actor_grads, actor_model_weights)
-        # return tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)
 
     def train(self, states,grads):
         """ Actor Training
@@ -86,12 +97,6 @@ class Actor(object):
         # print("state train shapes : ",states.shape)
         # print("shape of grad : ",grads.shape)
         self.optimizer([states, grads])
-
-
-        # self.sess.run(self.optimizer, feed_dict={
-        #     self.actor_state_input: states,
-        #     self.actor_critic_grad: grads
-        # })
 
     def predict(self, state):
         return self.actor_model.predict(state)
@@ -118,22 +123,25 @@ class Actor(object):
     def get_num_trainable_vars(self):
         return self.num_trainable_vars
 
-    def save(self, path):
-        self.actor_model.save_weights(path + '_actor.h5')
+    def save(self,path=""):
+        self.actor_model.save(os.path.join(path,"actor_model.h5"))
 
-    def load_weights(self, path):
-        self.actor_model.load_weights(path)
+    def load_model(self,path=""):
+        self.actor_model = keras.models.load_model(os.path.join(path,"actor_model.h5"))
+
 
 
 class Critic(object):
     """value function approximator"""
 
-    def __init__(self, sess, s_dim, a_dim, num_actor_vars, weights_len, gamma, tau, learning_rate, scope="critic"):
+    def __init__(self, sess, s_dim, a_dim, num_actor_vars, weights_len, gamma, tau, learning_rate,hidden_layer_1 = 256,hidden_layer_2 = 128):
         self.sess = sess
         self.s_dim = s_dim
         self.a_dim = a_dim
-        self.num_actor_vars = num_actor_vars
-        self.weights_len = weights_len
+        self.hidden_layer_1 = hidden_layer_1
+        self.hidden_layer_2 = hidden_layer_2
+        # self.num_actor_vars = num_actor_vars
+        # self.weights_len = weights_len
         self.gamma = gamma
         self.tau = tau
         self.learning_rate = learning_rate
@@ -151,12 +159,34 @@ class Critic(object):
         action = keras.Input(shape=(self.a_dim,))
         state_transform = keras.layers.Dense(self.s_dim, activation = 'relu')(state)
         input_state = keras.layers.concatenate([state_transform,action])
-        h1 = keras.layers.Dense(16, activation='relu')(input_state)
-        h2 = keras.layers.Dense(32, activation='relu')(h1)
-        output = keras.layers.Dense(1)(h2)
-
+        h1 = keras.layers.Dense(self.hidden_layer_1, activation='relu')(input_state)
+        h2 = keras.layers.Dense(self.hidden_layer_2, activation='relu')(h1)
+        output = keras.layers.Dense(1,activation='linear', kernel_initializer=random_uniform())(h2)
         model = keras.Model([state,action],output)
+        model.summary()
         return model
+
+    # def create_critic_model(self):
+    #     state = keras.Input(shape=(self.s_dim,))
+    #     action = keras.Input(shape=(self.a_dim,))
+    #     state_transform = keras.layers.Dense(self.s_dim, activation = 'relu')(state)
+    #     input_state = keras.layers.concatenate([state_transform,action])
+    #     f1 = 1. / np.sqrt(hidden_1)
+    #     h1 = keras.layers.Dense(units = hidden_1, activation='relu',kernel_initializer=random_uniform(-f1, f1),
+    #                                  bias_initializer=random_uniform(-f1, f1))(input_state)
+    #     h1 = keras.layers.BatchNormalization()(h1)
+    #     f2 = 1. / np.sqrt(hidden_2)
+    #     h2 = keras.layers.Dense(units = hidden_2, activation='relu',kernel_initializer=random_uniform(-f2, f2),
+    #                                  bias_initializer=random_uniform(-f2, f2))(h1)
+    #     h2 = keras.layers.BatchNormalization()(h2)
+    #     f3 = 0.003
+    #     output = keras.layers.Dense(units = 1,kernel_initializer=random_uniform(-f3, f3),
+    #                            bias_initializer=random_uniform(-f3, f3),
+    #                            kernel_regularizer=keras.regularizers.l2(0.01))(h2)
+    #
+    #     model = keras.Model([state,action],output)
+    #     model.summary()
+    #     return model
 
     def gradients(self, states, actions):
         """ Compute Q-value gradients w.r.t. states and policy-actions
@@ -189,30 +219,68 @@ class Critic(object):
             target_W[i] = W[i]
         self.target_critic_model.set_weights(target_W)
 
+    def save(self,path=""):
+        self.critic_model.save(os.path.join(path,"critic_model.h5"))
+
+# class RelayBuffer(object):
+#     def __init__(self, buffer_size=10000):
+#         self.buffer_size = buffer_size
+#         self.count = 0
+#         self.buffer = deque()
+#
+#     def add(self, state, action, reward, next_state):
+#         experience = (state, action, reward, next_state)
+#         if self.count < self.buffer_size:
+#             self.buffer.append(experience)
+#             self.count += 1
+#         else:
+#             self.buffer.popleft()
+#             self.buffer.append(experience)
+#
+#     def size(self):
+#         return self.count
+#
+#     def sample_batch(self, batch_size):
+#         return random.sample(self.buffer, batch_size)
+#
+#     def clear(self):
+#         self.buffer.clear()
+#         self.count = 0
+
 class RelayBuffer(object):
-    def __init__(self, buffer_size=1000):
-        self.buffer_size = buffer_size
-        self.count = 0
-        self.buffer = deque()
+    def __init__(self, max_size, input_shape, n_actions):
+        self.mem_size = max_size
+        self.mem_cntr = 0
+        self.state_memory = np.zeros((self.mem_size, input_shape))
+        self.new_state_memory = np.zeros((self.mem_size, input_shape))
+        self.action_memory = np.zeros((self.mem_size, n_actions))
+        self.reward_memory = np.zeros(self.mem_size)
+        self.terminal = np.zeros(self.mem_size)
+        self.current_fill = 0
 
-    def add(self, state, action, reward, next_state):
-        experience = (state, action, reward, next_state)
-        if self.count < self.buffer_size:
-            self.buffer.append(experience)
-            self.count += 1
-        else:
-            self.buffer.popleft()
-            self.buffer.append(experience)
-
+    def add(self, state, action, reward, state_, done):
+        index = self.mem_cntr % self.mem_size
+        self.state_memory[index] = state
+        self.new_state_memory[index] = state_
+        self.action_memory[index] = action
+        self.reward_memory[index] = reward
+        self.terminal[index] = 1-done
+        self.mem_cntr += 1
+        self.current_fill = min((self.current_fill+1),self.mem_size)
     def size(self):
-        return self.count
+        return self.current_fill
+
 
     def sample_batch(self, batch_size):
-        return random.sample(self.buffer, batch_size)
+        max_mem = min(self.mem_cntr, self.mem_size)
+        batch = np.random.choice(max_mem, batch_size)
+        states = self.state_memory[batch]
+        actions = self.action_memory[batch]
+        rewards = self.reward_memory[batch]
+        states_ = self.new_state_memory[batch]
+        terminal = self.terminal[batch]
 
-    def clear(self):
-        self.buffer.clear()
-        self.count = 0
+        return states, actions, rewards, states_,terminal
 class Noise:
     """generate noise for action"""
 
